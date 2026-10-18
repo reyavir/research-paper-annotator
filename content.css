@@ -1,0 +1,165 @@
+/* Annotator for arXiv — content.css
+ * Everything is prefixed `apa-` so we never collide with arXiv's own styles.
+ * Shared by the injected content script (abs/html) and the PDF viewer page.
+ */
+
+:root {
+  --apa-w: 340px;
+  --apa-hl: rgba(255, 226, 52, 0.55);
+  --apa-q: rgba(255, 150, 60, 0.45);
+  --apa-ul: #d6336c;
+  --apa-bg: #fbfbf8;
+  --apa-ink: #1f2328;
+  --apa-muted: #6b7280;
+  --apa-line: #e3e3dc;
+  --apa-accent: #2563eb;
+}
+
+/* ---- Reading layout: reserve room for the panel instead of covering the paper ---- */
+html.apa-open {
+  margin-right: var(--apa-w);
+}
+
+/* ---- Margin panel ---- */
+.apa-host {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--apa-w);
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  background: var(--apa-bg);
+  color: var(--apa-ink);
+  border-left: 1px solid var(--apa-line);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  box-sizing: border-box;
+}
+.apa-host[hidden] { display: none; }
+.apa-host *, .apa-host *::before, .apa-host *::after { box-sizing: border-box; }
+.apa-host button { font: inherit; cursor: pointer; }
+
+.apa-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--apa-line);
+}
+.apa-count { color: var(--apa-muted); font-weight: 400; }
+.apa-x { border: 0; background: none; font-size: 20px; line-height: 1; color: var(--apa-muted); }
+
+.apa-filters { display: flex; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--apa-line); }
+.apa-chipbtn { border: 1px solid var(--apa-line); background: #fff; border-radius: 999px; padding: 2px 10px; color: var(--apa-muted); }
+.apa-chipbtn.apa-on { background: var(--apa-ink); color: #fff; border-color: var(--apa-ink); }
+
+.apa-list { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.apa-empty { color: var(--apa-muted); margin: 8px 2px; }
+
+/* ---- Cards ---- */
+.apa-card {
+  background: #fff;
+  border: 1px solid var(--apa-line);
+  border-left: 4px solid #e0c200;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.apa-card.apa-k-question { border-left-color: #ee7a1a; }
+.apa-card.apa-k-underline { border-left-color: var(--apa-ul); }
+.apa-card.apa-k-note { border-left-color: var(--apa-accent); }
+.apa-card.apa-active { box-shadow: 0 0 0 2px var(--apa-accent); }
+.apa-card.apa-resolved { opacity: 0.55; }
+
+.apa-card-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.apa-card-top button { border: 0; background: none; padding: 0 2px; color: var(--apa-muted); }
+.apa-chip { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--apa-muted); }
+.apa-where { flex: 1; font-size: 11px; color: var(--apa-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.apa-quote { margin: 0; color: #444; font-style: italic; }
+.apa-note { margin-top: 6px; white-space: pre-wrap; }
+.apa-placeholder { color: var(--apa-muted); }
+.apa-orphan { margin-top: 4px; font-size: 11px; color: #b45309; }
+.apa-textarea { width: 100%; margin-top: 6px; font: inherit; padding: 6px; border: 1px solid var(--apa-accent); border-radius: 4px; resize: vertical; }
+
+/* ---- Footer ---- */
+.apa-foot { border-top: 1px solid var(--apa-line); padding: 8px 12px; }
+.apa-hints { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--apa-muted); font-size: 11px; margin-bottom: 8px; }
+.apa-hints kbd { background: #eee; border: 1px solid #d4d4cc; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; font: 11px ui-monospace, Menlo, monospace; color: var(--apa-ink); }
+.apa-btns { display: flex; gap: 6px; }
+.apa-btns button { flex: 1; padding: 5px 8px; border: 1px solid var(--apa-line); background: #fff; border-radius: 5px; }
+.apa-btns button:hover { background: #f3f3ee; }
+
+.apa-toast {
+  position: absolute; left: 12px; right: 12px; bottom: 90px;
+  background: #1f2328; color: #fff; padding: 8px 10px; border-radius: 6px;
+  opacity: 0; transform: translateY(6px); transition: opacity .15s, transform .15s; pointer-events: none;
+}
+.apa-toast.apa-show { opacity: 1; transform: none; }
+
+/* ---- Marks in the page (<mark> on abs/html, <div> rects in the PDF overlay) ----
+ * content.js sets --apa-c on a mark when the user picked a color; otherwise the per-kind default applies.
+ * Backgrounds are translucent so overlapping annotations all stay visible (newest is drawn on top). */
+mark.apa-mark { color: inherit; padding: 0; border-radius: 2px; cursor: pointer; }
+.apa-mark.apa-highlight,
+.apa-mark.apa-note { background: color-mix(in srgb, var(--apa-c, #ffe234) 55%, transparent); }
+.apa-mark.apa-note { border-bottom: 2px dotted var(--apa-accent); }
+.apa-mark.apa-question { background: color-mix(in srgb, var(--apa-c, #ff9650) 50%, transparent); border-bottom: 2px dashed #c2410c; }
+.apa-mark.apa-underline { background: none; border-bottom: 2px solid var(--apa-c, var(--apa-ul)); }
+.apa-mark.apa-resolved { background: none; border-bottom: 1px solid #999; }
+.apa-mark.apa-active { outline: 2px solid var(--apa-accent); outline-offset: 1px; }
+.apa-mark.apa-flash { animation: apa-flash .9s ease-out; }
+@keyframes apa-flash { 0% { outline: 4px solid var(--apa-accent); } 100% { outline: 4px solid transparent; } }
+
+/* PDF overlay rects: positioned absolutely by viewer.js, blended so the text underneath stays dark */
+.apa-rect { position: absolute; mix-blend-mode: multiply; pointer-events: none; border-radius: 2px; }
+.apa-rect.apa-underline { background: none; mix-blend-mode: normal; }
+
+@media (prefers-color-scheme: dark) {
+  .apa-host { --apa-bg: #1c1c1e; --apa-ink: #e8e8e6; --apa-line: #333; --apa-muted: #9a9a96; }
+  .apa-card, .apa-chipbtn, .apa-btns button { background: #26262a; color: var(--apa-ink); }
+  .apa-quote { color: #bbb; }
+  .apa-hints kbd { background: #333; border-color: #444; }
+}
+
+/* ---- Click popover: color, kind, edit, delete ---- */
+.apa-pop {
+  position: fixed; z-index: 2147483001; width: 232px; padding: 8px;
+  background: var(--apa-bg); color: var(--apa-ink); border: 1px solid var(--apa-line); border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.apa-pop-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.apa-pop button { font: inherit; cursor: pointer; border: 1px solid var(--apa-line); background: #fff; color: inherit; border-radius: 5px; padding: 3px 8px; }
+.apa-pop button.apa-on { background: var(--apa-ink); color: #fff; border-color: var(--apa-ink); }
+.apa-pop .apa-swatch { width: 22px; height: 22px; padding: 0; border-radius: 50%; }
+.apa-pop .apa-swatch.apa-on { outline: 2px solid var(--apa-ink); outline-offset: 1px; }
+.apa-pop .apa-custom { width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; }
+.apa-pop-kinds button { flex: 1; padding: 3px 4px; }
+.apa-pop .apa-danger { margin-left: auto; color: #b91c1c; }
+
+/* ---- Paper notes (bottom of panel) ---- */
+.apa-paper { border-top: 1px solid var(--apa-line); padding: 6px 12px; }
+.apa-paper summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
+.apa-paper .apa-textarea { margin-top: 6px; background: transparent; color: inherit; border-color: var(--apa-line); }
+
+/* ---- Text boxes on the PDF page ---- */
+.apa-boxes { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.apa-textbox {
+  position: absolute; box-sizing: border-box; padding: 3px 6px; border-radius: 3px; cursor: move; user-select: none; touch-action: none;
+  pointer-events: auto; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.3; color: #222;
+  background: color-mix(in srgb, var(--apa-c, #fff2a8) 90%, white); border: 1px solid rgba(0, 0, 0, 0.35); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+.apa-textbox.apa-empty { color: #888; font-style: italic; }
+.apa-placing, .apa-placing .apa-page { cursor: crosshair; }
+
+/* ---- Reopen tab (visible while the panel is closed) ---- */
+.apa-tab {
+  position: fixed; right: 0; top: 40%; z-index: 2147483000; padding: 8px 6px;
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  background: var(--apa-ink); color: #fff; border: 0; border-radius: 0 6px 6px 0;
+  font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; cursor: pointer; opacity: 0.8;
+}
+.apa-tab:hover { opacity: 1; }
+.apa-tab[hidden] { display: none; }

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Annotator for arXiv</title>
+  <link rel="stylesheet" href="../lib/pdf_viewer.css">
+  <link rel="stylesheet" href="../content.css">
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <div id="bar">
+    <span id="name">Loading…</span>
+    <span class="spacer"></span>
+    <button id="zoom-out" title="Zoom out">−</button>
+    <span id="zoom-label">140%</span>
+    <button id="zoom-in" title="Zoom in">+</button>
+    <a id="orig" href="#">Original PDF ↗</a>
+  </div>
+  <main id="pages"></main>
+
+  <!-- MV3 forbids inline scripts, so everything is loaded by file. Order matters. -->
+  <script src="../lib/pdf-lib.min.js"></script>
+  <script src="../content.js"></script>
+  <script src="../pdf-exporter.js"></script>
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>

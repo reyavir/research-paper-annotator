@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>All annotated papers</title>
+  <link rel="stylesheet" href="library.css">
+</head>
+<body>
+  <header>
+    <h1>Annotated papers</h1>
+    <input id="q" type="search" placeholder="Search quotes, notes, titles…" autofocus>
+    <button id="export">Export all (JSON)</button>
+    <button id="import">Import…</button>
+    <input id="file" type="file" accept="application/json" hidden>
+  </header>
+
+  <main>
+    <section>
+      <h2>Open questions <span id="qcount"></span></h2>
+      <div id="questions"></div>
+    </section>
+    <section>
+      <h2>Papers <span id="pcount"></span></h2>
+      <div id="papers"></div>
+    </section>
+  </main>
+
+  <script src="library.js"></script>
+</body>
+</html>
