@@ -87,8 +87,8 @@ html.apa-open {
 .apa-foot { border-top: 1px solid var(--apa-line); padding: 8px 12px; }
 .apa-hints { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--apa-muted); font-size: 11px; margin-bottom: 8px; }
 .apa-hints kbd { background: #eee; border: 1px solid #d4d4cc; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; font: 11px ui-monospace, Menlo, monospace; color: var(--apa-ink); }
-.apa-btns { display: flex; gap: 6px; }
-.apa-btns button { flex: 1; padding: 5px 8px; border: 1px solid var(--apa-line); background: #fff; border-radius: 5px; }
+.apa-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.apa-btns button { flex: 1 1 40%; padding: 5px 8px; border: 1px solid var(--apa-line); background: #fff; border-radius: 5px; }
 .apa-btns button:hover { background: #f3f3ee; }
 
 .apa-toast {

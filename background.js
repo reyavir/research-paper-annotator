@@ -21,7 +21,7 @@ chrome.action.onClicked.addListener(async (tab) => {
   } catch {
     // Tab was open before the extension was installed/reloaded: inject on demand (needs activeTab).
     await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['content.css'] });
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['markdown.js', 'content.js'] });
     chrome.tabs.sendMessage(tab.id, { type: 'apa-toggle' });
   }
 });

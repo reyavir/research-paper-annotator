@@ -266,7 +266,8 @@
     function save() {
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
-        const clean = anns.map(({ orphan, ...rest }) => rest);
+        // `where` (section / page) is stored too, so the library page can export Markdown without the paper open.
+        const clean = anns.map(({ orphan, ...rest }) => ({ ...rest, where: adapter.where(rest) || rest.where }));
         chrome.storage.local.set({
           [storageKey]: { id, title: adapter.title(), url: location.href, updated: Date.now(), paperNote, annotations: clean },
         });
@@ -320,6 +321,7 @@
           'div',
           { class: 'apa-btns' },
           el('button', { onclick: exportMarkdown, title: 'Ctrl/Cmd+Shift+E' }, 'Copy Markdown'),
+          el('button', { onclick: downloadMarkdown, title: 'Save as a .md file' }, 'Download .md'),
           adapter.beginPlaceTextBox ? el('button', { onclick: () => (showToast('Click on the page where the text box should go (Esc cancels)'), adapter.beginPlaceTextBox()) }, 'Text box') : null,
           adapter.exportPdf ? el('button', { onclick: exportPdf, title: 'Ctrl/Cmd+Shift+D' }, 'Annotated PDF') : null,
           el('button', { onclick: () => chrome.runtime.sendMessage({ type: 'apa-open-library' }), title: 'Open questions and notes across all papers' }, 'All papers')
@@ -695,33 +697,12 @@
 
     // ------------------------------------------------------------ export
     function toMarkdown() {
-      const all = sorted();
-      const fmt = (a, bullet) => {
-        const where = adapter.where(a);
-        if (a.kind === 'textbox') return `${bullet} ${squish(a.note) || '(empty)'}${where ? ` — _${where}_` : ''}`;
-        const lines = [`${bullet} “${squish(a.quote)}”${where ? ` — _${where}_` : ''}`];
-        if (a.refText) lines.push(...a.refText.split('\n').map((l) => `  - Reference: ${l}`));
-        if (a.note) lines.push(...a.note.split('\n').map((l) => `  - ${l}`));
-        return lines.join('\n');
-      };
-      const section = (title, items) => (items.length ? `## ${title}\n\n${items.join('\n')}\n` : null);
+      return APA_MD.toMarkdown({ id, title: adapter.title(), paperNote, annotations: anns.map((a) => ({ ...a, where: adapter.where(a) })) });
+    }
 
-      return [
-        `# ${adapter.title()}`,
-        '',
-        `arXiv: ${id} · ${location.href.startsWith('http') ? location.href : 'https://arxiv.org/abs/' + id}`,
-        `Exported ${new Date().toISOString().slice(0, 10)} · ${all.length} annotations`,
-        '',
-        paperNote.trim() ? `## Paper notes\n\n${paperNote.trim()}\n` : null,
-        section('Open questions', all.filter((a) => a.kind === 'question' && !a.resolved).map((a) => fmt(a, '- [ ]'))),
-        section('References to check', all.filter((a) => a.kind === 'reference').map((a) => fmt(a, a.resolved ? '- [x]' : '- [ ]'))),
-        section('Notes', all.filter((a) => a.kind === 'note').map((a) => fmt(a, '-'))),
-        section('Highlights & underlines', all.filter((a) => a.kind === 'highlight' || a.kind === 'underline').map((a) => fmt(a, '-'))),
-        section('Text boxes', all.filter((a) => a.kind === 'textbox').map((a) => fmt(a, '-'))),
-        section('Resolved questions', all.filter((a) => a.kind === 'question' && a.resolved).map((a) => fmt(a, '- [x]'))),
-      ]
-        .filter((s) => s !== null)
-        .join('\n');
+    function downloadMarkdown() {
+      APA_MD.download(toMarkdown(), APA_MD.filenameFor(id));
+      showToast('Saved Markdown file');
     }
 
     async function exportMarkdown() {

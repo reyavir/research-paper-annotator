@@ -76,7 +76,7 @@ function render() {
               el('span', { class: 'title' }, squish(p.title || p.id)),
               el('span', { class: 'sub' }, `arXiv:${p.id} · ${p.annotations.length} annotations${open ? ` · ${open} open` : ''} · ${new Date(p.updated).toLocaleDateString()}`)
             ),
-            el('div', { class: 'actions' }, el('a', { href: absUrl(p.id), target: '_blank' }, 'Open paper ↗'), el('button', { class: 'danger', onclick: () => removePaper(p) }, 'Delete all annotations')),
+            el('div', { class: 'actions' }, el('a', { href: absUrl(p.id), target: '_blank' }, 'Open paper ↗'), el('button', { onclick: () => copyText(APA_MD.toMarkdown(p), 'Copied Markdown') }, 'Copy Markdown'), el('button', { onclick: () => APA_MD.download(APA_MD.toMarkdown(p), APA_MD.filenameFor(p.id)) }, 'Download .md'), el('button', { class: 'danger', onclick: () => removePaper(p) }, 'Delete all annotations')),
             p.paperNote ? el('div', { class: 'ann k-note' }, el('div', { class: 'meta' }, 'Paper notes'), el('div', { class: 'note' }, p.paperNote)) : null,
             items.sort((a, b) => a.created - b.created).map((a) => annRow(p, a))
           );
@@ -91,6 +91,18 @@ async function removePaper(p) {
   delete papers[p.id];
   render();
 }
+
+// ---------------------------------------------------------------- Markdown
+async function copyText(text, msg) {
+  await navigator.clipboard.writeText(text);
+  const b = $('export-md'), old = b.textContent;
+  b.textContent = msg;
+  setTimeout(() => (b.textContent = old), 1500);
+}
+$('export-md').onclick = () => {
+  const all = Object.values(papers);
+  if (all.length) APA_MD.download(APA_MD.toMarkdownAll(all), `arxiv-annotations-${new Date().toISOString().slice(0, 10)}.md`);
+};
 
 // ---------------------------------------------------------------- backup / restore
 $('export').onclick = () => {
