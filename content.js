@@ -39,6 +39,7 @@
       resolve: 'r', // toggle "resolved" on the active annotation
       color: 'c', // open the color / kind popover for the active annotation
       textbox: 't', // PDF viewer only: then click on the page to place a text box
+      reference: 'l', // save the selected citation / term under "References to check"
       edit: 'Enter', // edit note on the active annotation
       remove: ['Backspace', 'Delete'],
     },
@@ -49,7 +50,7 @@
     quoteContext: 32, // chars of prefix/suffix stored for re-anchoring
   };
 
-  const KIND_LABEL = { highlight: 'Highlight', underline: 'Underline', note: 'Note', question: 'Question', textbox: 'Text box' };
+  const KIND_LABEL = { highlight: 'Highlight', underline: 'Underline', note: 'Note', question: 'Question', textbox: 'Text box', reference: 'To check' };
   const TEXT_KINDS = ['highlight', 'underline', 'note', 'question']; // kinds you can switch between (a text box isn't tied to text)
   const PALETTE = ['#ffe234', '#8be28b', '#7ec8ff', '#ff9ec7', '#ffa95c', '#c4a5ff'];
   const UNDO_LIMIT = 50;
@@ -58,6 +59,13 @@
   const uid = () => Math.random().toString(36).slice(2, 10);
   const squish = (s) => s.replace(/\s+/g, ' ').trim();
   const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+
+  /** "[13]", "[3, 7]", "Vaswani et al., 2017" -> true. Plain pattern matching, nothing fancier. */
+  const looksLikeCitation = (q) =>
+    /\[\s*\d+(?:\s*[,–-]\s*\d+)*\s*\]/.test(q) || (q.length < 80 && /[A-Z][A-Za-z'’-]+.*\b(?:19|20)\d{2}[a-z]?\b/.test(q));
+
+  /** Where to look a reference up. Only opened if the user clicks the link. */
+  const scholarUrl = (a) => 'https://scholar.google.com/scholar?q=' + encodeURIComponent((a.refText || a.quote).split('\n')[0].replace(/^\[\d+\]\s*/, '').slice(0, 200));
 
   /**
    * "/abs/2301.12345v2" | "/pdf/2301.12345v2.pdf" | "/html/hep-th/9901001" -> "2301.12345" | "hep-th/9901001".
@@ -115,6 +123,25 @@
       return squish(t);
     }
 
+    /**
+     * arXiv's HTML turns every in-text citation into a link to its bibliography entry (href="#bib.bib13").
+     * If the selection is, or contains, such a link, return the full reference text(s) so the user
+     * doesn't have to scroll down to read what "[13]" is.
+     */
+    function citedReferences(r) {
+      const links = new Set(r.cloneContents().querySelectorAll('a[href*="#bib"]'));
+      const anc = r.commonAncestorContainer;
+      const own = (anc.nodeType === 1 ? anc : anc.parentElement)?.closest('a[href*="#bib"]');
+      if (own) links.add(own);
+      const out = [];
+      for (const a of links) {
+        const id = decodeURIComponent((a.getAttribute('href') || '').split('#')[1] || '');
+        const target = id && document.getElementById(id);
+        if (target) out.push(squish(target.textContent));
+      }
+      return [...new Set(out)].join('\n').slice(0, 800);
+    }
+
     function capture() {
       const sel = getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
@@ -134,8 +161,10 @@
       const end = start + quote.length;
       const { text } = walk();
       const c = CONFIG.quoteContext;
+      const refText = citedReferences(r);
       return {
         quote,
+        extra: refText ? { refText } : undefined,
         anchor: { start, end, prefix: text.slice(Math.max(0, start - c), start), suffix: text.slice(end, end + c) },
       };
     }
@@ -271,17 +300,22 @@
       }, paperNote)
     );
 
+    const refSummary = el('summary', {}, 'References to check');
+    const refList = el('div', { class: 'apa-reflist' });
+    const refBox = el('details', { class: 'apa-refs', hidden: true }, refSummary, refList);
+
     const host = el(
       'aside',
       { class: 'apa-host', 'aria-label': 'Paper annotations' },
       el('header', { class: 'apa-head' }, el('strong', {}, 'Annotations ', count), el('button', { class: 'apa-x', title: 'Close panel', onclick: () => setEnabled(false) }, '×')),
       el('div', { class: 'apa-filters' }, filters),
       list,
+      refBox,
       paperNoteBox,
       el(
         'footer',
         { class: 'apa-foot' },
-        el('div', { class: 'apa-hints' }, hint('H', 'highlight'), hint('U', 'underline'), hint('N', 'note'), hint('Q', 'question'), hint('J/K', 'next/prev'), hint('R', 'resolve'), hint('C', 'color'), adapter.beginPlaceTextBox ? hint('T', 'text box') : null, hint('⌫', 'delete')),
+        el('div', { class: 'apa-hints' }, hint('H', 'highlight'), hint('U', 'underline'), hint('N', 'note'), hint('Q', 'question'), hint('L', 'to check'), hint('J/K', 'next/prev'), hint('R', 'resolve'), hint('C', 'color'), adapter.beginPlaceTextBox ? hint('T', 'text box') : null, hint('⌫', 'delete')),
         el(
           'div',
           { class: 'apa-btns' },
@@ -297,6 +331,33 @@
       return el('span', {}, el('kbd', {}, k), ' ' + label);
     }
     document.documentElement.appendChild(host);
+
+    // Button bar that appears next to a text selection: the mouse route to everything the keys do.
+    const selBtn = (label, kind) => el('button', { onclick: () => create(kind) }, label);
+    const selbar = el(
+      'div',
+      { class: 'apa-selbar', hidden: true, onmousedown: (e) => e.preventDefault() }, // preventDefault keeps the selection alive
+      selBtn('Highlight', 'highlight'),
+      selBtn('Note', 'note'),
+      selBtn('Question', 'question'),
+      selBtn('+ To check', 'reference')
+    );
+    document.documentElement.appendChild(selbar);
+
+    function updateSelbar() {
+      const sel = getSelection();
+      const anchorEl = sel?.anchorNode?.parentElement;
+      if (!enabled || !sel || sel.rangeCount === 0 || sel.isCollapsed || !anchorEl || anchorEl.closest('.apa-host,.apa-pop,.apa-selbar,input,textarea')) return void (selbar.hidden = true);
+      const r = sel.getRangeAt(0).getBoundingClientRect();
+      if (!r.width && !r.height) return void (selbar.hidden = true);
+      selbar.hidden = false;
+      const [w, h] = [selbar.offsetWidth, selbar.offsetHeight];
+      selbar.style.left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 8)) + 'px';
+      selbar.style.top = (r.top - h - 8 < 8 ? r.bottom + 8 : r.top - h - 8) + 'px';
+    }
+    document.addEventListener('mouseup', () => setTimeout(updateSelbar, 0));
+    document.addEventListener('selectionchange', () => getSelection()?.isCollapsed && (selbar.hidden = true));
+    window.addEventListener('wheel', () => (selbar.hidden = true), { passive: true });
 
     // Small tab on the right edge, shown while the panel is closed, so it's always possible to get back in.
     const reopenTab = el('button', { class: 'apa-tab', title: 'Open annotations (Alt+A)', onclick: () => setEnabled(true) });
@@ -314,11 +375,16 @@
       document.documentElement.classList.toggle('apa-open', on);
       host.hidden = !on;
       reopenTab.hidden = on;
+      if (!on) selbar.hidden = true;
     }
 
     // ------------------------------------------------------------ rendering
     const sorted = () => [...anns].sort((a, b) => adapter.order(a) - adapter.order(b));
-    const visible = () => sorted().filter((a) => filter === 'all' || (filter === 'question' ? a.kind === 'question' : a.kind === 'note'));
+    const matchesFilter = (a) => filter === 'all' || (filter === 'question' ? a.kind === 'question' : a.kind === 'note');
+    /** The main list. References to check live in their own section below it. */
+    const visible = () => sorted().filter((a) => a.kind !== 'reference' && matchesFilter(a));
+    /** What J / K walk through. */
+    const navItems = () => sorted().filter(matchesFilter);
     const byId = (i) => anns.find((a) => a.id === i);
 
     function renderPanel() {
@@ -326,14 +392,39 @@
       reopenTab.textContent = anns.length ? `Annotations (${anns.length})` : 'Annotate';
       for (const b of filters) b.classList.toggle('apa-on', b.dataset.f === filter);
       list.replaceChildren(...visible().map(card));
+      const refs = sorted().filter((a) => a.kind === 'reference');
+      refBox.hidden = !refs.length;
+      refSummary.textContent = `References to check (${refs.filter((a) => !a.resolved).length} left of ${refs.length})`;
+      refList.replaceChildren(...refs.map(refCard));
       if (!anns.length) list.append(el('p', { class: 'apa-empty' }, 'Select text, then press H to highlight, N to add a note, Q to flag a question.'));
       syncMarkState();
-      if (editingId) list.querySelector('textarea')?.focus(); // immediately, so the first keystroke isn't lost
+      if (editingId) host.querySelector('.apa-list textarea, .apa-reflist textarea')?.focus(); // immediately, so the first keystroke isn't lost
     }
 
-    function card(a) {
-      const wh = adapter.where(a);
-      const noteArea =
+    /** One row in the "References to check" section. */
+    function refCard(a) {
+      return el(
+        'article',
+        { class: `apa-ref${a.resolved ? ' apa-resolved' : ''}${a.id === activeId ? ' apa-active' : ''}`, dataset: { id: a.id }, onclick: () => setActive(a.id, true) },
+        el(
+          'div',
+          { class: 'apa-ref-top' },
+          el('input', { type: 'checkbox', checked: a.resolved, title: 'Mark as checked (R)', onclick: (e) => (e.stopPropagation(), toggleResolved(a.id)) }),
+          el('span', { class: 'apa-ref-text' }, clip(a.quote, 120)),
+          el('span', { class: 'apa-chip' }, a.refType === 'citation' ? 'Citation' : 'Term'),
+          el('span', { class: 'apa-where' }, adapter.where(a)),
+          el('button', { title: 'Delete (Backspace)', onclick: (e) => (e.stopPropagation(), remove(a.id)) }, '🗑')
+        ),
+        a.refText ? el('div', { class: 'apa-reftext' }, clip(a.refText, 320)) : null,
+        a.orphan ? el('div', { class: 'apa-orphan' }, '⚠ Couldn’t find this text on the page') : null,
+        el('a', { class: 'apa-lookup', href: scholarUrl(a), target: '_blank', rel: 'noopener', onclick: (e) => e.stopPropagation() }, 'Look up on Google Scholar ↗'),
+        noteBlock(a)
+      );
+    }
+
+    /** The editable note under a card: textarea while editing, text otherwise, placeholder if empty. */
+    function noteBlock(a) {
+      return (
         editingId === a.id
           ? el('textarea', {
               class: 'apa-textarea',
@@ -355,9 +446,15 @@
             }, a.note)
           : a.note
           ? el('div', { class: 'apa-note', onclick: (e) => (e.stopPropagation(), startEdit(a.id)) }, a.note)
-          : a.kind === 'note' || a.kind === 'question' || a.kind === 'textbox'
+          : a.kind === 'note' || a.kind === 'question' || a.kind === 'textbox' || a.kind === 'reference'
           ? el('div', { class: 'apa-note apa-placeholder', onclick: (e) => (e.stopPropagation(), startEdit(a.id)) }, a.kind === 'textbox' ? 'Add text…' : 'Add a note…')
-          : null;
+          : null
+      );
+    }
+
+    function card(a) {
+      const wh = adapter.where(a);
+      const noteArea = noteBlock(a);
 
       return el(
         'article',
@@ -458,7 +555,7 @@
         'div',
         { class: 'apa-pop', onmousedown: (e) => e.stopPropagation() },
         el('div', { class: 'apa-pop-row' }, PALETTE.map(swatch), custom, a.color ? el('button', { class: 'apa-pop-reset', title: 'Default color', onclick: () => setColor(a.id, null) }, '↺') : null),
-        a.kind === 'textbox' ? null : el('div', { class: 'apa-pop-row apa-pop-kinds' }, TEXT_KINDS.map(kindBtn)),
+        a.kind === 'textbox' || a.kind === 'reference' ? null : el('div', { class: 'apa-pop-row apa-pop-kinds' }, TEXT_KINDS.map(kindBtn)),
         el(
           'div',
           { class: 'apa-pop-row' },
@@ -510,6 +607,11 @@
       if (!cap) return showToast('Select some text first');
       checkpoint();
       const a = { id: uid(), kind, quote: cap.quote, note: '', resolved: false, created: Date.now(), anchor: cap.anchor };
+      if (kind === 'reference') {
+        Object.assign(a, cap.extra);
+        a.refType = a.refText || looksLikeCitation(a.quote) ? 'citation' : 'term';
+        refBox.open = true;
+      }
       anns.push(a);
       adapter.paint(a);
       getSelection()?.removeAllRanges();
@@ -517,7 +619,8 @@
       if (kind === 'note' || kind === 'question') editingId = a.id;
       save();
       renderPanel();
-      list.querySelector('.apa-active')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      host.querySelector('.apa-card.apa-active, .apa-ref.apa-active')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (kind === 'reference') showToast('Added to References to check');
     }
 
     /** PDF viewer only: the adapter calls this once the user has clicked where the box goes. */
@@ -570,7 +673,7 @@
 
     function setActive(i, scroll) {
       activeId = i;
-      list.querySelectorAll('.apa-card').forEach((c) => c.classList.toggle('apa-active', c.dataset.id === i));
+      host.querySelectorAll('.apa-card, .apa-ref').forEach((c) => c.classList.toggle('apa-active', c.dataset.id === i));
       syncMarkState();
       if (!scroll) return;
       const target = document.querySelector(`[data-apa-id="${i}"]`);
@@ -579,11 +682,11 @@
         target.classList.add('apa-flash');
         setTimeout(() => target.classList.remove('apa-flash'), 900);
       }
-      list.querySelector(`.apa-card[data-id="${i}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      host.querySelector(`.apa-card[data-id="${i}"], .apa-ref[data-id="${i}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
 
     function step(dir) {
-      const v = visible();
+      const v = navItems();
       if (!v.length) return;
       const idx = v.findIndex((a) => a.id === activeId);
       const next = idx === -1 ? (dir > 0 ? 0 : v.length - 1) : Math.min(v.length - 1, Math.max(0, idx + dir));
@@ -597,6 +700,7 @@
         const where = adapter.where(a);
         if (a.kind === 'textbox') return `${bullet} ${squish(a.note) || '(empty)'}${where ? ` — _${where}_` : ''}`;
         const lines = [`${bullet} “${squish(a.quote)}”${where ? ` — _${where}_` : ''}`];
+        if (a.refText) lines.push(...a.refText.split('\n').map((l) => `  - Reference: ${l}`));
         if (a.note) lines.push(...a.note.split('\n').map((l) => `  - ${l}`));
         return lines.join('\n');
       };
@@ -610,6 +714,7 @@
         '',
         paperNote.trim() ? `## Paper notes\n\n${paperNote.trim()}\n` : null,
         section('Open questions', all.filter((a) => a.kind === 'question' && !a.resolved).map((a) => fmt(a, '- [ ]'))),
+        section('References to check', all.filter((a) => a.kind === 'reference').map((a) => fmt(a, a.resolved ? '- [x]' : '- [ ]'))),
         section('Notes', all.filter((a) => a.kind === 'note').map((a) => fmt(a, '-'))),
         section('Highlights & underlines', all.filter((a) => a.kind === 'highlight' || a.kind === 'underline').map((a) => fmt(a, '-'))),
         section('Text boxes', all.filter((a) => a.kind === 'textbox').map((a) => fmt(a, '-'))),
@@ -672,6 +777,7 @@
         else if (key === K.underline) handled(() => create('underline'));
         else if (key === K.note) handled(() => (activeId && getSelection()?.isCollapsed ? startEdit(activeId) : create('note')));
         else if (key === K.question) handled(() => create('question'));
+        else if (key === K.reference) handled(() => create('reference'));
         else if (key === K.next) handled(() => step(1));
         else if (key === K.prev) handled(() => step(-1));
         else if (key === K.resolve && activeId) handled(() => toggleResolved(activeId));
@@ -692,7 +798,7 @@
       const hit = e.target.closest?.('.apa-mark')?.dataset.apaId || adapter.hit?.(e);
       if (!hit || !byId(hit)) return;
       setActive(hit, false);
-      list.querySelector(`.apa-card[data-id="${hit}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      host.querySelector(`.apa-card[data-id="${hit}"], .apa-ref[data-id="${hit}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       openPopover(hit, e.clientX, e.clientY);
     }, true); // capture: run before any handler the page itself registers
     // Close when the user scrolls the page. Wheel/touch rather than 'scroll': the browser also fires 'scroll'

@@ -5,7 +5,7 @@
 const PREFIX = 'paper:';
 const $ = (id) => document.getElementById(id);
 const squish = (s) => s.replace(/\s+/g, ' ').trim();
-const KIND_LABEL = { highlight: 'Highlight', underline: 'Underline', note: 'Note', question: 'Question', textbox: 'Text box' };
+const KIND_LABEL = { highlight: 'Highlight', underline: 'Underline', note: 'Note', question: 'Question', textbox: 'Text box', reference: 'To check' };
 
 /** @type {Record<string, {id:string,title:string,updated:number,annotations:any[]}>} */
 let papers = {};
@@ -36,6 +36,7 @@ function annRow(p, a) {
     { class: `ann k-${a.kind}${a.resolved ? ' resolved' : ''}`, style: a.color ? `border-left-color:${a.color}` : false },
     el('div', { class: 'meta' }, KIND_LABEL[a.kind], a.resolved ? ' · resolved' : ''),
     a.quote ? el('blockquote', {}, a.quote) : null,
+    a.refText ? el('div', { class: 'reftext' }, a.refText) : null,
     a.note ? el('div', { class: 'note' }, a.note) : null
   );
 }
@@ -49,6 +50,13 @@ function render() {
   $('qcount').textContent = `(${qs.length})`;
   $('questions').replaceChildren(
     ...(qs.length ? qs.map(([p, a]) => el('div', {}, el('a', { class: 'paper-link', href: absUrl(p.id), target: '_blank' }, squish(p.title || p.id)), annRow(p, a))) : [el('p', { class: 'empty' }, 'No open questions.')])
+  );
+
+  // References to check across all papers
+  const rs = list.flatMap((p) => p.annotations.filter((a) => a.kind === 'reference' && !a.resolved && matches(needle, p, a)).map((a) => [p, a]));
+  $('rcount').textContent = `(${rs.length})`;
+  $('refs').replaceChildren(
+    ...(rs.length ? rs.map(([p, a]) => el('div', {}, el('a', { class: 'paper-link', href: absUrl(p.id), target: '_blank' }, squish(p.title || p.id)), annRow(p, a))) : [el('p', { class: 'empty' }, 'Nothing to check.')])
   );
 
   // Papers

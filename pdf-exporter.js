@@ -9,6 +9,7 @@
  *   - question           -> translucent orange rectangles (or the picked color)
  *   - underline          -> a line under each text rectangle (red unless the user picked a color)
  *   - text box           -> a filled, bordered box with the text, at the position you dragged it to
+ *   - to check           -> teal underline; listed under "References to check" on the appended page
  *   - paper notes        -> printed at the top of the appended Annotations page
  *   Overlapping annotations are drawn oldest first, so the newest ends up on top.
  *   - note / question    -> a numbered badge in the right margin, plus the note text on an
@@ -27,6 +28,7 @@
   };
   const UNDERLINE = rgb(0.84, 0.2, 0.42);
   const BADGE = rgb(0.15, 0.39, 0.92);
+  const TEAL = rgb(0.06, 0.46, 0.43);
 
   /** "#ff9ec7" -> pdf-lib rgb(), or null if the annotation has no custom color. */
   const hexToRgb = (hex) => (/^#[0-9a-f]{6}$/i.test(hex || '') ? rgb(...[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)) : null);
@@ -87,8 +89,8 @@
         const page = pages[r.page - 1];
         if (!page) continue;
         const y = page.getHeight() - r.y - r.h;
-        if (ann.kind === 'underline') {
-          page.drawLine({ start: { x: r.x, y: y + 1 }, end: { x: r.x + r.w, y: y + 1 }, thickness: 1.2, color: hexToRgb(ann.color) || UNDERLINE });
+        if (ann.kind === 'underline' || ann.kind === 'reference') {
+          page.drawLine({ start: { x: r.x, y: y + 1 }, end: { x: r.x + r.w, y: y + 1 }, thickness: 1.2, color: hexToRgb(ann.color) || (ann.kind === 'reference' ? TEAL : UNDERLINE) });
         } else {
           const { color, opacity } = COLORS[ann.kind] || COLORS.highlight;
           page.drawRectangle({ x: r.x, y, width: r.w, height: r.h, color: hexToRgb(ann.color) || color, opacity });
@@ -113,7 +115,8 @@
     }
 
     // Appended page(s) with the text of every numbered note / question.
-    if (callouts.length || paperNote.trim()) {
+    const refs = annotations.filter((a) => a.kind === 'reference' && a.anchor?.rects?.length);
+    if (callouts.length || refs.length || paperNote.trim()) {
       const [W, H] = [pages[0].getWidth(), pages[0].getHeight()];
       const margin = 54, size = 10, lead = 13;
       let page = doc.addPage([W, H]);
@@ -151,6 +154,19 @@
         for (const l of quote) (page.drawText(l, { x: margin + 12, y, size: size - 1, font, color: rgb(0.4, 0.4, 0.4) }), (y -= lead));
         for (const l of body) (page.drawText(l, { x: margin + 12, y, size, font }), (y -= lead));
         y -= 10;
+      }
+
+      if (refs.length) {
+        ensure(40);
+        page.drawText('References to check', { x: margin, y, size: 11, font: bold, color: TEAL });
+        y -= lead + 4;
+        for (const ann of refs) {
+          const first = `${ann.resolved ? '[x]' : '[ ]'} ${ann.quote}  (p. ${ann.anchor.rects[0].page})`;
+          const lines = [...wrap(first, font, size, W - 2 * margin), ...(ann.refText ? wrap(ann.refText.replace(/\n/g, ' ; '), font, size - 1, W - 2 * margin - 16) : [])];
+          ensure(lines.length * lead + 8);
+          lines.forEach((l, i) => (page.drawText(l, { x: margin + (i && ann.refText ? 16 : 0), y, size: i && ann.refText ? size - 1 : size, font, color: i ? rgb(0.4, 0.4, 0.4) : rgb(0, 0, 0) }), (y -= lead)));
+          y -= 6;
+        }
       }
     }
 

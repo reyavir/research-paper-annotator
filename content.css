@@ -107,6 +107,7 @@ mark.apa-mark { color: inherit; padding: 0; border-radius: 2px; cursor: pointer;
 .apa-mark.apa-note { border-bottom: 2px dotted var(--apa-accent); }
 .apa-mark.apa-question { background: color-mix(in srgb, var(--apa-c, #ff9650) 50%, transparent); border-bottom: 2px dashed #c2410c; }
 .apa-mark.apa-underline { background: none; border-bottom: 2px solid var(--apa-c, var(--apa-ul)); }
+.apa-mark.apa-reference { background: none; border-bottom: 2px dotted #0f766e; }
 .apa-mark.apa-resolved { background: none; border-bottom: 1px solid #999; }
 .apa-mark.apa-active { outline: 2px solid var(--apa-accent); outline-offset: 1px; }
 .apa-mark.apa-flash { animation: apa-flash .9s ease-out; }
@@ -163,3 +164,30 @@ mark.apa-mark { color: inherit; padding: 0; border-radius: 2px; cursor: pointer;
 }
 .apa-tab:hover { opacity: 1; }
 .apa-tab[hidden] { display: none; }
+
+/* ---- Selection button bar ---- */
+.apa-selbar {
+  position: fixed; z-index: 2147483001; display: flex; gap: 2px; padding: 3px;
+  background: #1f2328; border-radius: 7px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+.apa-selbar[hidden] { display: none; }
+.apa-selbar button { border: 0; background: none; color: #fff; padding: 4px 9px; border-radius: 5px; cursor: pointer; font: inherit; }
+.apa-selbar button:hover { background: rgba(255, 255, 255, 0.18); }
+.apa-selbar button:last-child { color: #5eead4; }
+
+/* ---- References to check ---- */
+.apa-refs { border-top: 1px solid var(--apa-line); padding: 6px 12px; max-height: 38%; overflow-y: auto; }
+.apa-refs[hidden] { display: none; }
+.apa-refs summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
+.apa-reflist { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.apa-ref { background: var(--apa-bg); border: 1px solid var(--apa-line); border-left: 4px solid #0f766e; border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+.apa-ref.apa-active { box-shadow: 0 0 0 2px var(--apa-accent); }
+.apa-ref.apa-resolved { opacity: 0.55; }
+.apa-ref.apa-resolved .apa-ref-text { text-decoration: line-through; }
+.apa-ref-top { display: flex; align-items: center; gap: 6px; }
+.apa-ref-top button { border: 0; background: none; padding: 0 2px; color: var(--apa-muted); }
+.apa-ref-text { flex: 1; font-weight: 600; overflow-wrap: anywhere; }
+.apa-reftext { margin-top: 4px; color: var(--apa-muted); font-size: 12px; white-space: pre-wrap; }
+.apa-lookup { display: inline-block; margin-top: 4px; font-size: 12px; color: var(--apa-accent); text-decoration: none; }
+.apa-lookup:hover { text-decoration: underline; }

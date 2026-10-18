@@ -25,6 +25,7 @@ After you change any code, click the reload arrow on the extension's card **and 
 | `U` | Underline |
 | `N` | Note: highlight the text and type your note |
 | `Q` | Question: flag something you don't understand yet, type what's unclear |
+| `L` | To check: save a citation or term under **References to check** (see below) |
 | `J` / `K` | Next / previous annotation |
 | `R` | Mark the active question resolved (or open again) |
 | `C` | Pick a color or change the kind of the active annotation |
@@ -38,7 +39,8 @@ While typing a note, `Cmd/Ctrl+Enter` or `Esc` saves it.
 
 3. **Click any highlight** to open a small popover: pick any color, switch between highlight / underline / note / question, edit the note, or delete.
 4. Overlapping highlights all stay visible; the newest is on top.
-5. The **Paper notes** box at the bottom of the panel is for notes about the whole paper (summary, what to read next).
+5. **References to check:** select a citation like `[13]` or `Vaswani et al., 2017`, or any term you want to look up later, then press `L` or click **+ To check** in the little button bar that appears next to your selection (the bar also has Highlight, Note and Question). It goes into a **References to check** section in the panel, where you can tick items off, add a note, or click **Look up on Google Scholar** (opens only when you click it). On arXiv HTML pages, selecting a citation also pulls in the full bibliography entry, so you can see what `[13]` is without scrolling to the references.
+6. The **Paper notes** box at the bottom of the panel is for notes about the whole paper (summary, what to read next).
 
 ### On `arxiv.org/pdf/…`
 
@@ -58,7 +60,7 @@ Click **All papers** in the panel. It lists every paper you've annotated, shows 
 
 - Annotations are saved automatically in `chrome.storage.local`, per paper, so they come back when you reload.
 - Annotations follow the paper across versions (v1 → v2). If the text changed and a highlight can't be found, its card shows a warning instead of disappearing.
-- Nothing is sent anywhere. There is no server, account, or tracking.
+- Nothing is sent anywhere. There is no server, account, or tracking. (The only outgoing link is **Look up on Google Scholar**, and only when you click it.)
 - Browser data is easy to lose (clearing site data, reinstalling the extension, a new profile). **Export a JSON backup now and then.**
 
 ## Troubleshooting
