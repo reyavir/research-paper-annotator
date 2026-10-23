@@ -100,22 +100,39 @@ html.apa-open {
 
 /* ---- Marks in the page (<mark> on abs/html, <div> rects in the PDF overlay) ----
  * content.js sets --apa-c on a mark when the user picked a color; otherwise the per-kind default applies.
- * Backgrounds are translucent so overlapping annotations all stay visible (newest is drawn on top). */
-mark.apa-mark { color: inherit; padding: 0; border-radius: 2px; cursor: pointer; }
-.apa-mark.apa-highlight,
-.apa-mark.apa-note { background: color-mix(in srgb, var(--apa-c, #ffe234) 55%, transparent); }
-.apa-mark.apa-note { border-bottom: 2px dotted var(--apa-accent); }
-.apa-mark.apa-question { background: color-mix(in srgb, var(--apa-c, #ff9650) 50%, transparent); border-bottom: 2px dashed #c2410c; }
-.apa-mark.apa-underline { background: none; border-bottom: 2px solid var(--apa-c, var(--apa-ul)); }
-.apa-mark.apa-reference { background: none; border-bottom: 2px dotted #0f766e; }
-.apa-mark.apa-resolved { background: none; border-bottom: 1px solid #999; }
-.apa-mark.apa-active { outline: 2px solid var(--apa-accent); outline-offset: 1px; }
+ * Backgrounds are translucent so overlapping annotations all stay visible (newest is drawn on top).
+ * Active / resolved only change how strong the color is: no outlines or borders, so nothing looks boxed in. */
+.apa-mark { --apa-alpha: 50%; --apa-line-alpha: 100%; }
+.apa-mark.apa-active { --apa-alpha: 65%; }
+.apa-mark.apa-resolved { --apa-alpha: 18%; --apa-line-alpha: 35%; }
+
+mark.apa-mark {
+  color: inherit; padding: 0; border-radius: 2px; cursor: pointer;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+.apa-mark.apa-highlight { background: color-mix(in srgb, var(--apa-c, #ffe234) var(--apa-alpha), transparent); }
+.apa-mark.apa-note { background: color-mix(in srgb, var(--apa-c, #8ecbff) var(--apa-alpha), transparent); }
+.apa-mark.apa-question { background: color-mix(in srgb, var(--apa-c, #ffa25c) var(--apa-alpha), transparent); }
+
+/* Underline and "to check" are real text underlines on the page: one clean line however the text wraps. */
+.apa-mark.apa-underline:not(.apa-rect),
+.apa-mark.apa-reference:not(.apa-rect) {
+  background: none; text-decoration-line: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; text-decoration-skip-ink: none;
+}
+.apa-mark.apa-underline:not(.apa-rect) { text-decoration-color: color-mix(in srgb, var(--apa-c, #d6336c) var(--apa-line-alpha), transparent); }
+.apa-mark.apa-reference:not(.apa-rect) { text-decoration-style: dotted; text-decoration-color: color-mix(in srgb, var(--apa-c, #0f766e) var(--apa-line-alpha), transparent); }
+
 .apa-mark.apa-flash { animation: apa-flash .9s ease-out; }
-@keyframes apa-flash { 0% { outline: 4px solid var(--apa-accent); } 100% { outline: 4px solid transparent; } }
+@keyframes apa-flash { 0% { filter: saturate(3) contrast(1.15); } 100% { filter: none; } }
 
 /* PDF overlay rects: positioned absolutely by viewer.js, blended so the text underneath stays dark */
 .apa-rect { position: absolute; mix-blend-mode: multiply; pointer-events: none; border-radius: 2px; }
-.apa-rect.apa-underline { background: none; mix-blend-mode: normal; }
+.apa-rect.apa-underline,
+.apa-rect.apa-reference { background: none; mix-blend-mode: normal; border-radius: 0; border-bottom: 2px solid color-mix(in srgb, var(--apa-c, #d6336c) var(--apa-line-alpha), transparent); }
+.apa-rect.apa-reference { border-bottom-style: dotted; border-bottom-color: color-mix(in srgb, var(--apa-c, #0f766e) var(--apa-line-alpha), transparent); }
+
+/* A text box is a real box, so it keeps an outline while it's the active one */
+.apa-textbox.apa-active { outline: 2px solid var(--apa-accent); outline-offset: 1px; }
 
 @media (prefers-color-scheme: dark) {
   .apa-host { --apa-bg: #1c1c1e; --apa-ink: #e8e8e6; --apa-line: #333; --apa-muted: #9a9a96; }
@@ -153,7 +170,9 @@ mark.apa-mark { color: inherit; padding: 0; border-radius: 2px; cursor: pointer;
   background: color-mix(in srgb, var(--apa-c, #fff2a8) 90%, white); border: 1px solid rgba(0, 0, 0, 0.35); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 .apa-textbox.apa-empty { color: #888; font-style: italic; }
-.apa-placing, .apa-placing .apa-page { cursor: crosshair; }
+/* Typing in a box on the page */
+.apa-textbox[contenteditable="plaintext-only"] { cursor: text; user-select: text; -webkit-user-select: text; outline: 2px solid var(--apa-accent); }
+.apa-textbox[contenteditable="plaintext-only"]:empty::before { content: 'Type here…'; color: #888; font-style: italic; }
 
 /* ---- Reopen tab (visible while the panel is closed) ---- */
 .apa-tab {
@@ -174,7 +193,7 @@ mark.apa-mark { color: inherit; padding: 0; border-radius: 2px; cursor: pointer;
 .apa-selbar[hidden] { display: none; }
 .apa-selbar button { border: 0; background: none; color: #fff; padding: 4px 9px; border-radius: 5px; cursor: pointer; font: inherit; }
 .apa-selbar button:hover { background: rgba(255, 255, 255, 0.18); }
-.apa-selbar button:last-child { color: #5eead4; }
+.apa-selbar button.apa-sel-ref { color: #5eead4; }
 
 /* ---- References to check ---- */
 .apa-refs { border-top: 1px solid var(--apa-line); padding: 6px 12px; max-height: 38%; overflow-y: auto; }

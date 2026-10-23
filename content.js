@@ -38,6 +38,7 @@
       prev: 'k',
       resolve: 'r', // toggle "resolved" on the active annotation
       color: 'c', // open the color / kind popover for the active annotation
+      erase: 'e', // remove highlighting from the selected text
       textbox: 't', // PDF viewer only: then click on the page to place a text box
       reference: 'l', // save the selected citation / term under "References to check"
       edit: 'Enter', // edit note on the active annotation
@@ -239,7 +240,31 @@
       return heading ? clip(squish(heading.textContent), 60) : '';
     }
 
-    return { paperId, title, capture, paint, unpaint, order: (a) => a.anchor.start, where, hit: null };
+    /** What the user selected, for erasing: just its [start, end) range of page text. */
+    function captureRegion() {
+      const c = capture();
+      return c && { start: c.anchor.start, end: c.anchor.end };
+    }
+
+    /** What's left of `ann` once `region` is removed: null if untouched, otherwise 0, 1 or 2 pieces. */
+    function subtract(ann, region) {
+      const { text } = walk();
+      const loc = locate(text, ann);
+      if (!loc) return null;
+      const [start, end] = loc;
+      if (end <= region.start || start >= region.end) return null;
+
+      const piece = (a, b) => {
+        while (a < b && /\s/.test(text[a])) a++;
+        while (b > a && /\s/.test(text[b - 1])) b--;
+        if (a >= b) return null;
+        const c = CONFIG.quoteContext;
+        return { quote: text.slice(a, b), anchor: { start: a, end: b, prefix: text.slice(Math.max(0, a - c), a), suffix: text.slice(b, b + c) } };
+      };
+      return [start < region.start && piece(start, region.start), end > region.end && piece(region.end, end)].filter(Boolean);
+    }
+
+    return { paperId, title, capture, captureRegion, subtract, paint, unpaint, order: (a) => a.anchor.start, where, hit: null };
   })();
 
   // ====================================================================================
@@ -253,6 +278,7 @@
     /** @type {Array<{id:string,kind:string,quote:string,note:string,resolved:boolean,created:number,anchor:any,orphan?:boolean}>} */
     let anns = [];
     let activeId = null;
+    let lastActiveId = null; // where J / K carry on from after the selection is cleared
     let editingId = null;
     let filter = 'all'; // all | question | note
     let enabled = adapter.alwaysOn || false;
@@ -316,13 +342,13 @@
       el(
         'footer',
         { class: 'apa-foot' },
-        el('div', { class: 'apa-hints' }, hint('H', 'highlight'), hint('U', 'underline'), hint('N', 'note'), hint('Q', 'question'), hint('L', 'to check'), hint('J/K', 'next/prev'), hint('R', 'resolve'), hint('C', 'color'), adapter.beginPlaceTextBox ? hint('T', 'text box') : null, hint('⌫', 'delete')),
+        el('div', { class: 'apa-hints' }, hint('H', 'highlight'), hint('U', 'underline'), hint('N', 'note'), hint('Q', 'question'), hint('L', 'to check'), hint('E', 'erase'), hint('J/K', 'next/prev'), hint('R', 'resolve'), hint('C', 'color'), adapter.beginPlaceTextBox ? hint('T', 'text box') : null, hint('⌫', 'delete')),
         el(
           'div',
           { class: 'apa-btns' },
           el('button', { onclick: exportMarkdown, title: 'Ctrl/Cmd+Shift+E' }, 'Copy Markdown'),
           el('button', { onclick: downloadMarkdown, title: 'Save as a .md file' }, 'Download .md'),
-          adapter.beginPlaceTextBox ? el('button', { onclick: () => (showToast('Click on the page where the text box should go (Esc cancels)'), adapter.beginPlaceTextBox()) }, 'Text box') : null,
+          adapter.beginPlaceTextBox ? el('button', { onclick: () => adapter.beginPlaceTextBox() }, 'Text box') : null,
           adapter.exportPdf ? el('button', { onclick: exportPdf, title: 'Ctrl/Cmd+Shift+D' }, 'Annotated PDF') : null,
           el('button', { onclick: () => chrome.runtime.sendMessage({ type: 'apa-open-library' }), title: 'Open questions and notes across all papers' }, 'All papers')
         )
@@ -335,21 +361,23 @@
     document.documentElement.appendChild(host);
 
     // Button bar that appears next to a text selection: the mouse route to everything the keys do.
-    const selBtn = (label, kind) => el('button', { onclick: () => create(kind) }, label);
+    const selBtn = (label, kind) => el('button', { class: kind === 'reference' ? 'apa-sel-ref' : '', onclick: () => create(kind) }, label);
     const selbar = el(
       'div',
       { class: 'apa-selbar', hidden: true, onmousedown: (e) => e.preventDefault() }, // preventDefault keeps the selection alive
       selBtn('Highlight', 'highlight'),
+      selBtn('Underline', 'underline'),
       selBtn('Note', 'note'),
       selBtn('Question', 'question'),
-      selBtn('+ To check', 'reference')
+      selBtn('+ To check', 'reference'),
+      el('button', { title: 'Remove highlighting from the selected text (E)', onclick: eraseSelection }, 'Erase')
     );
     document.documentElement.appendChild(selbar);
 
     function updateSelbar() {
       const sel = getSelection();
       const anchorEl = sel?.anchorNode?.parentElement;
-      if (!enabled || !sel || sel.rangeCount === 0 || sel.isCollapsed || !anchorEl || anchorEl.closest('.apa-host,.apa-pop,.apa-selbar,input,textarea')) return void (selbar.hidden = true);
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed || !anchorEl || anchorEl.closest('.apa-host,.apa-pop,.apa-selbar,input,textarea')) return void (selbar.hidden = true);
       const r = sel.getRangeAt(0).getBoundingClientRect();
       if (!r.width && !r.height) return void (selbar.hidden = true);
       selbar.hidden = false;
@@ -370,14 +398,22 @@
       toast.classList.add('apa-show');
       clearTimeout(showToast.t);
       showToast.t = setTimeout(() => toast.classList.remove('apa-show'), 2200);
+      if (!enabled) {
+        // The panel is hidden, so its toast can't be seen. Show the message on the edge tab instead.
+        reopenTab.textContent = msg;
+        clearTimeout(showToast.tabT);
+        showToast.tabT = setTimeout(() => (reopenTab.textContent = tabLabel()), 2200);
+      }
     }
+
+    const tabLabel = () => (anns.length ? `Annotations (${anns.length})` : 'Annotate');
 
     function setEnabled(on) {
       enabled = on;
       document.documentElement.classList.toggle('apa-open', on);
       host.hidden = !on;
       reopenTab.hidden = on;
-      if (!on) selbar.hidden = true;
+      updateSelbar(); // the selection bar stays available while the panel is closed
     }
 
     // ------------------------------------------------------------ rendering
@@ -391,7 +427,7 @@
 
     function renderPanel() {
       count.textContent = `(${anns.length})`;
-      reopenTab.textContent = anns.length ? `Annotations (${anns.length})` : 'Annotate';
+      reopenTab.textContent = tabLabel();
       for (const b of filters) b.classList.toggle('apa-on', b.dataset.f === filter);
       list.replaceChildren(...visible().map(card));
       const refs = sorted().filter((a) => a.kind === 'reference');
@@ -607,6 +643,7 @@
     function create(kind) {
       const cap = adapter.capture();
       if (!cap) return showToast('Select some text first');
+      if ((kind === 'note' || kind === 'question') && !enabled) setEnabled(true); // they need the panel's text box
       checkpoint();
       const a = { id: uid(), kind, quote: cap.quote, note: '', resolved: false, created: Date.now(), anchor: cap.anchor };
       if (kind === 'reference') {
@@ -623,6 +660,47 @@
       renderPanel();
       host.querySelector('.apa-card.apa-active, .apa-ref.apa-active')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       if (kind === 'reference') showToast('Added to References to check');
+      else if (!enabled) showToast(`${KIND_LABEL[kind]} added`); // panel is closed: the tab on the edge shows this
+    }
+
+    /**
+     * Un-highlight part of an annotation: select the part you want gone and press E.
+     * Annotations the selection cuts into are trimmed, or split in two if it falls in the middle.
+     * (A piece split off keeps the kind, color and reference text, but not the note.)
+     */
+    function eraseSelection() {
+      const region = adapter.captureRegion?.();
+      if (!region) return showToast('Select the text you want to un-highlight');
+      const touched = [];
+      for (const a of anns) {
+        if (a.kind === 'textbox') continue;
+        const pieces = adapter.subtract(a, region);
+        if (pieces) touched.push([a, pieces]);
+      }
+      if (!touched.length) return showToast('Nothing highlighted there');
+
+      checkpoint();
+      closePopover();
+      for (const [a, pieces] of touched) {
+        adapter.unpaint(a);
+        if (!pieces.length) {
+          anns = anns.filter((x) => x !== a);
+          if (activeId === a.id) activeId = null;
+          continue;
+        }
+        const [first, ...rest] = pieces;
+        Object.assign(a, { quote: first.quote, anchor: first.anchor });
+        adapter.paint(a);
+        for (const piece of rest) {
+          const copy = { ...a, id: uid(), note: '', quote: piece.quote, anchor: piece.anchor };
+          anns.push(copy);
+          adapter.paint(copy);
+        }
+      }
+      getSelection()?.removeAllRanges();
+      save();
+      renderPanel();
+      showToast(`Erased (Cmd/Ctrl+Z to undo)`);
     }
 
     /** PDF viewer only: the adapter calls this once the user has clicked where the box goes. */
@@ -632,10 +710,28 @@
       anns.push(a);
       adapter.paint(a);
       activeId = a.id;
-      editingId = a.id;
       save();
       renderPanel();
-      list.querySelector('.apa-active')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (adapter.editInPlace) adapter.editInPlace(a.id); // type straight into the box on the page
+      else {
+        editingId = a.id;
+        renderPanel();
+      }
+    }
+
+    /** The adapter calls this when the user finishes typing in a box on the page. */
+    function updateNote(i, text) {
+      const a = byId(i);
+      if (!a) return;
+      text = text.trim();
+      if (a.kind === 'textbox' && !text) return remove(i); // an empty box isn't worth keeping
+      if (text !== a.note) {
+        checkpoint();
+        a.note = text;
+        save();
+      }
+      if (a.kind === 'textbox') adapter.paint(a);
+      renderPanel();
     }
 
     /** Called by the adapter after the user drags a box. */
@@ -648,6 +744,10 @@
     }
 
     function startEdit(i) {
+      if (byId(i)?.kind === 'textbox' && adapter.editInPlace) {
+        setActive(i, true);
+        return adapter.editInPlace(i);
+      }
       editingId = i;
       setActive(i, false);
       renderPanel();
@@ -673,8 +773,16 @@
       renderPanel();
     }
 
+    /** Nothing selected: drop the outline from the last annotation touched. */
+    function clearActive() {
+      if (!activeId) return;
+      activeId = null;
+      host.querySelectorAll('.apa-card, .apa-ref').forEach((c) => c.classList.remove('apa-active'));
+      syncMarkState();
+    }
+
     function setActive(i, scroll) {
-      activeId = i;
+      activeId = lastActiveId = i;
       host.querySelectorAll('.apa-card, .apa-ref').forEach((c) => c.classList.toggle('apa-active', c.dataset.id === i));
       syncMarkState();
       if (!scroll) return;
@@ -690,7 +798,8 @@
     function step(dir) {
       const v = navItems();
       if (!v.length) return;
-      const idx = v.findIndex((a) => a.id === activeId);
+      const from = activeId ?? lastActiveId;
+      const idx = v.findIndex((a) => a.id === from);
       const next = idx === -1 ? (dir > 0 ? 0 : v.length - 1) : Math.min(v.length - 1, Math.max(0, idx + dir));
       setActive(v[next].id, true);
     }
@@ -732,7 +841,7 @@
     }
 
     // ------------------------------------------------------------ keyboard
-    const isTyping = (t) => !!t?.closest?.('input,textarea,select,[contenteditable=""],[contenteditable="true"]');
+    const isTyping = (t) => !!t?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])');
 
     window.addEventListener(
       'keydown',
@@ -747,24 +856,36 @@
 
         if (enabled && mod && !e.altKey && e.code === 'KeyZ') return e.preventDefault(), e.shiftKey ? redo() : undo();
         if (enabled && mod && !e.altKey && e.code === 'KeyY') return e.preventDefault(), redo();
-        if (e.key === 'Escape') (closePopover(), adapter.cancelPlaceTextBox?.());
+        if (e.key === 'Escape') (closePopover(), clearActive());
 
-        if (!enabled || mod || e.altKey) return;
+        if (mod || e.altKey) return;
         const K = CONFIG.keys;
         const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
         const handled = (fn) => (e.preventDefault(), fn());
 
+        // With the panel closed, marking still works (highlight, underline, erase, to-check, question, note).
+        // Notes and questions open the panel, since you need its text box to type. Everything else needs it open.
+        const works_closed = [K.highlight, K.underline, K.note, K.question, K.reference, K.erase].includes(key);
+        if (!enabled && !works_closed) return;
+
         if (key === K.highlight) handled(() => create('highlight'));
         else if (key === K.underline) handled(() => create('underline'));
-        else if (key === K.note) handled(() => (activeId && getSelection()?.isCollapsed ? startEdit(activeId) : create('note')));
+        else if (key === K.note)
+          handled(() => {
+            if (activeId && getSelection()?.isCollapsed) {
+              setEnabled(true); // editing a note needs the panel
+              startEdit(activeId);
+            } else create('note');
+          });
         else if (key === K.question) handled(() => create('question'));
         else if (key === K.reference) handled(() => create('reference'));
+        else if (key === K.erase) handled(eraseSelection);
         else if (key === K.next) handled(() => step(1));
         else if (key === K.prev) handled(() => step(-1));
         else if (key === K.resolve && activeId) handled(() => toggleResolved(activeId));
         else if (key === K.edit && activeId) handled(() => startEdit(activeId));
         else if (key === K.color && activeId) handled(openPopoverNearActive);
-        else if (key === K.textbox && adapter.beginPlaceTextBox) handled(() => (showToast('Click on the page where the text box should go (Esc cancels)'), adapter.beginPlaceTextBox()));
+        else if (key === K.textbox && adapter.beginPlaceTextBox) handled(adapter.beginPlaceTextBox);
         else if (K.remove.includes(key) && activeId) handled(() => remove(activeId));
       },
       true
@@ -773,11 +894,11 @@
     // Click a highlight in the page -> focus its card and open the popover.
     // Where highlights overlap, the click lands on the newest one (innermost mark / topmost rect).
     document.addEventListener('click', (e) => {
-      if (e.target.closest?.('.apa-pop')) return;
+      if (e.target.closest?.('.apa-pop, [contenteditable]:not([contenteditable="false"])')) return; // popover itself / typing in a text box
       closePopover();
       if (!getSelection()?.isCollapsed || e.target.closest?.('.apa-host')) return;
       const hit = e.target.closest?.('.apa-mark')?.dataset.apaId || adapter.hit?.(e);
-      if (!hit || !byId(hit)) return;
+      if (!hit || !byId(hit)) return clearActive(); // clicked plain page text: stop showing the last annotation as selected
       setActive(hit, false);
       host.querySelector(`.apa-card[data-id="${hit}"], .apa-ref[data-id="${hit}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       openPopover(hit, e.clientX, e.clientY);
@@ -799,7 +920,7 @@
         renderPanel();
       },
     };
-    adapter.init?.({ createTextBox, moveAnn });
+    adapter.init?.({ createTextBox, moveAnn, updateNote, closePopover });
     setEnabled(enabled);
     api.restore();
     return api;

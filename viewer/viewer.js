@@ -131,6 +131,54 @@ $('zoom-in').onclick = () => zoom(1);
 $('zoom-out').onclick = () => zoom(-1);
 
 // ---------------------------------------------------------------- PDF adapter
+/**
+ * The selection comes back as one rectangle per text fragment, each a slightly different size, which
+ * paints as ragged boxes. Merge neighbours on the same line into a single rectangle.
+ */
+function mergeLines(rects) {
+  const out = [];
+  for (const r of rects) {
+    const m = out[out.length - 1];
+    const sameLine = m && m.page === r.page && Math.min(m.y + m.h, r.y + r.h) - Math.max(m.y, r.y) > 0.5 * Math.min(m.h, r.h);
+    if (sameLine && r.x <= m.x + m.w + 8 && r.x + r.w >= m.x - 8) {
+      // Grow sideways only: keeping the first fragment's height stops a superscript from adding a notch.
+      const x = Math.min(m.x, r.x);
+      Object.assign(m, { x, w: Math.max(m.x + m.w, r.x + r.w) - x });
+    } else out.push({ ...r });
+  }
+  return out;
+}
+
+/** The text sitting under `rects`, character by character (null if none of those pages are rendered yet). */
+function textInRects(rects) {
+  const lines = [];
+  let found = false;
+  for (const r of rects) {
+    const p = pages[r.page - 1];
+    const b = p.div.getBoundingClientRect();
+    const [l, t] = [b.left + r.x * scale, b.top + r.y * scale];
+    const [rt, bt] = [l + r.w * scale, t + r.h * scale];
+    const range = document.createRange();
+    let line = '';
+    for (const span of p.div.querySelectorAll('.textLayer span')) {
+      const tn = span.firstChild;
+      if (!tn || tn.nodeType !== Node.TEXT_NODE) continue;
+      const sb = span.getBoundingClientRect();
+      if (sb.right < l || sb.left > rt || sb.bottom < t || sb.top > bt) continue;
+      found = true;
+      for (let i = 0; i < tn.data.length; i++) {
+        range.setStart(tn, i);
+        range.setEnd(tn, i + 1);
+        const c = range.getBoundingClientRect();
+        const [cx, cyy] = [c.left + c.width / 2, c.top + c.height / 2];
+        if (cx >= l && cx <= rt && cyy >= t && cyy <= bt) line += tn.data[i];
+      }
+    }
+    lines.push(line);
+  }
+  return found ? squish(lines.join(' ')) : null;
+}
+
 const pageAt = (x, y) =>
   pages.find((p) => {
     const b = p.div.getBoundingClientRect();
@@ -170,7 +218,48 @@ const adapter = {
         rects.push({ page: p.num, x: (cr.left - b.left) / scale, y: (cr.top - b.top) / scale, w: cr.width / scale, h: cr.height / scale });
       }
     }
-    return rects.length ? { quote, anchor: { rects } } : null;
+    return rects.length ? { quote, anchor: { rects: mergeLines(rects) } } : null;
+  },
+
+  /** What the user selected, for erasing: its line rectangles in reading order. */
+  captureRegion() {
+    const c = this.capture();
+    return c && { rects: c.anchor.rects };
+  },
+
+  /**
+   * What's left of `ann` once `region` is removed: null if untouched, else 0, 1 or 2 pieces
+   * (the part before the erased region and the part after it).
+   */
+  subtract(ann, region) {
+    const sameLine = (a, b) => a.page === b.page && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 0.5 * Math.min(a.h, b.h);
+    const first = region.rects[0];
+    const last = region.rects[region.rects.length - 1];
+    const cy = (r) => r.y + r.h / 2;
+    const isBefore = (r) => r.page < first.page || (r.page === first.page && (cy(r) < cy(first) - 0.5 * first.h || (sameLine(r, first) && r.x + r.w <= first.x + 1.5)));
+
+    let touched = false;
+    const before = [];
+    const after = [];
+    for (const r of ann.anchor.rects) {
+      let segs = [[r.x, r.x + r.w]];
+      for (const q of region.rects) {
+        if (!sameLine(r, q)) continue;
+        segs = segs.flatMap(([l, h]) => {
+          if (q.x + q.w <= l || q.x >= h) return [[l, h]];
+          touched = true;
+          return [[l, q.x], [q.x + q.w, h]].filter(([a, b]) => b - a > 1.5);
+        });
+      }
+      for (const [l, h] of segs) {
+        const piece = { ...r, x: l, w: h - l };
+        (isBefore(piece) ? before : after).push(piece);
+      }
+    }
+    if (!touched) return null;
+    // Re-read the remaining text from the text layer; if a page isn't rendered, keep the old quote.
+    const piece = (rects) => rects.length && { anchor: { rects }, quote: textInRects(rects) ?? ann.quote };
+    return [piece(before), piece(after)].filter(Boolean);
   },
 
   // Idempotent: clears this annotation's rects first, so it's safe to call again after a zoom.
@@ -210,14 +299,24 @@ const adapter = {
     return null;
   },
 
-  // ---- text boxes: press T, click on the page, type in the panel; drag the box to move it ----
+  // ---- text boxes: click the button (or press T) and a box appears, ready to type in; drag it to move ----
   beginPlaceTextBox() {
-    placing = true;
-    document.body.classList.add('apa-placing');
+    // Drop it in the middle of whichever page has the most on screen.
+    let best = null;
+    let bestVisible = 0;
+    for (const p of pages) {
+      const b = p.div.getBoundingClientRect();
+      const visible = Math.min(b.bottom, innerHeight) - Math.max(b.top, 40);
+      if (visible > bestVisible) [best, bestVisible] = [p, visible];
+    }
+    if (!best) return;
+    const b = best.div.getBoundingClientRect();
+    const y = Math.max(10, Math.min((innerHeight / 2 - b.top) / scale, b.height / scale - 60));
+    core.createTextBox({ page: best.num, x: Math.max(0, (b.width / scale - TEXTBOX_W) / 2), y, w: TEXTBOX_W, h: 0 });
   },
-  cancelPlaceTextBox() {
-    placing = false;
-    document.body.classList.remove('apa-placing');
+  editInPlace(id) {
+    const d = document.querySelector(`.apa-textbox[data-apa-id="${id}"]`);
+    if (d) editTextBox(d, id);
   },
   init(api) {
     core = api;
@@ -226,8 +325,7 @@ const adapter = {
   exportPdf: (anns, paperNote) => PDFExporter.exportAnnotatedPdf(originalBytes, anns, paperId, paperNote),
 };
 
-let core; // { createTextBox, moveAnn } handed to us by the annotator core
-let placing = false;
+let core; // { createTextBox, moveAnn, updateNote, closePopover } handed to us by the annotator core
 let swallowNextClick = false;
 const TEXTBOX_W = 180;
 
@@ -241,12 +339,42 @@ function paintTextBox(ann) {
   d.textContent = ann.note || 'Empty text box';
   Object.assign(d.style, { left: r.x * scale + 'px', top: r.y * scale + 'px', width: r.w * scale + 'px', fontSize: 10 * scale + 'px' });
   d.addEventListener('pointerdown', (e) => dragTextBox(e, ann, d, p));
+  d.addEventListener('dblclick', () => editTextBox(d, ann.id));
   p.boxes.append(d);
   return true;
 }
 
+/** Turn a box into an editable field. Saves when it loses focus; Esc or Cmd/Ctrl+Enter finishes. */
+function editTextBox(d, id) {
+  if (d.isContentEditable) return;
+  core.closePopover();
+  if (d.classList.contains('apa-empty')) {
+    d.textContent = '';
+    d.classList.remove('apa-empty');
+  }
+  d.contentEditable = 'plaintext-only';
+  d.focus();
+  const caret = document.createRange();
+  caret.selectNodeContents(d);
+  caret.collapse(false); // caret at the end of any existing text
+  getSelection().removeAllRanges();
+  getSelection().addRange(caret);
+
+  d.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) d.blur();
+  });
+  d.addEventListener(
+    'blur',
+    () => {
+      d.contentEditable = 'false';
+      core.updateNote(id, d.innerText); // also repaints this box (or deletes it if left empty)
+    },
+    { once: true }
+  );
+}
+
 function dragTextBox(e, ann, d, p) {
-  if (e.button !== 0) return;
+  if (e.button !== 0 || d.isContentEditable) return; // while typing, clicks just move the caret
   const r0 = ann.anchor.rects[0];
   const [sx, sy] = [e.clientX, e.clientY];
   let [dx, dy] = [0, 0];
@@ -278,19 +406,9 @@ function dragTextBox(e, ann, d, p) {
 document.addEventListener(
   'click',
   (e) => {
-    if (swallowNextClick) {
-      swallowNextClick = false;
-      return e.stopImmediatePropagation(); // (stopPropagation wouldn't stop the annotator's listener on this same node)
-    }
-    if (!placing) return;
-    e.stopImmediatePropagation();
-    e.preventDefault();
-    const p = pageAt(e.clientX, e.clientY);
-    adapter.cancelPlaceTextBox();
-    if (!p) return;
-    const b = p.div.getBoundingClientRect();
-    const x = Math.min((e.clientX - b.left) / scale, b.width / scale - TEXTBOX_W);
-    core.createTextBox({ page: p.num, x: Math.max(0, x), y: (e.clientY - b.top) / scale, w: TEXTBOX_W, h: 0 });
+    if (!swallowNextClick) return;
+    swallowNextClick = false;
+    e.stopImmediatePropagation(); // (stopPropagation wouldn't stop the annotator's listener on this same node)
   },
   true
 );

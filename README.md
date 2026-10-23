@@ -25,28 +25,32 @@ After you change any code, click the reload arrow on the extension's card **and 
 | `U` | Underline |
 | `N` | Note: highlight the text and type your note |
 | `Q` | Question: flag something you don't understand yet, type what's unclear |
+| `E` | Erase: select part of a highlight and press `E` to un-highlight just that part (a highlight cut in the middle becomes two) |
 | `L` | To check: save a citation or term under **References to check** (see below) |
 | `J` / `K` | Next / previous annotation |
 | `R` | Mark the active question resolved (or open again) |
 | `C` | Pick a color or change the kind of the active annotation |
 | `Enter` | Edit the note on the active annotation |
 | `Backspace` | Delete the active annotation |
+| `Esc` | Deselect (clicking on plain text does the same) |
 | `Alt+A` | Show / hide the panel |
 | `Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z` | Undo / redo |
 | `Cmd/Ctrl+Shift+E` | Copy all annotations as Markdown (or use **Copy Markdown** / **Download .md** in the panel) |
 
 While typing a note, `Cmd/Ctrl+Enter` or `Esc` saves it.
 
+**You don't need the panel open to mark text.** Closing it (the `×`, or `Alt+A`) hides the panel and leaves the edge tab. While it's closed, `H`, `U`, `E` (erase), `L` (to check) and the selection bar still work, and a short confirmation shows on the edge tab. `N` and `Q` open the panel, since you type the note there. Other keys (`J`/`K`, `R`, `C`, `Backspace`) need the panel open.
+
 3. **Click any highlight** to open a small popover: pick any color, switch between highlight / underline / note / question, edit the note, or delete.
 4. Overlapping highlights all stay visible; the newest is on top.
-5. **References to check:** select a citation like `[13]` or `Vaswani et al., 2017`, or any term you want to look up later, then press `L` or click **+ To check** in the little button bar that appears next to your selection (the bar also has Highlight, Note and Question). It goes into a **References to check** section in the panel, where you can tick items off, add a note, or click **Look up on Google Scholar** (opens only when you click it). On arXiv HTML pages, selecting a citation also pulls in the full bibliography entry, so you can see what `[13]` is without scrolling to the references.
+5. **References to check:** select a citation like `[13]` or `Vaswani et al., 2017`, or any term you want to look up later, then press `L` or click **+ To check** in the little button bar that appears next to your selection (the bar also has Highlight, Underline, Note, Question and Erase). It goes into a **References to check** section in the panel, where you can tick items off, add a note, or click **Look up on Google Scholar** (opens only when you click it). On arXiv HTML pages, selecting a citation also pulls in the full bibliography entry, so you can see what `[13]` is without scrolling to the references.
 6. The **Paper notes** box at the bottom of the panel is for notes about the whole paper (summary, what to read next).
 
 ### On `arxiv.org/pdf/…`
 
 Chrome's built-in PDF viewer can't be annotated by extensions, so click the toolbar icon on a PDF tab and the paper reopens in this extension's own viewer. Everything above works there too, plus:
 
-- `T`, then click on the page: place a **text box**. Type its text in the panel; drag the box to move it.
+- **Text box:** click **Text box** in the panel (or press `T`). A box appears on the page and you can type straight into it. Press `Esc` or `Cmd/Ctrl+Enter` when you're done. Drag the box to move it, double-click it to edit again, click it to change its color or delete it. A box left empty is discarded.
 - `Cmd/Ctrl+Shift+D`: download an **annotated PDF** (`<arXiv-ID>-annotated.pdf`) with your highlights, underlines, text boxes, numbered note badges, and an extra last page listing your notes, questions, and paper notes.
 - The `+` / `−` buttons zoom.
 
